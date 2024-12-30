@@ -1,0 +1,29 @@
+name: Node.js CI/CD
+
+on: 
+  workflow_dispatch: {}
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build: 
+
+    runs-on: ["self-hosted"]
+
+    strategy:
+      matrix:
+        node-version: [20.x]
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Use Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+    - run: npm i --force
+    - run: |   
+        touch .env
+        echo "${{ secrets.PROD_Secrets }}" > .env
+    - run: pm2 restart 0
+  

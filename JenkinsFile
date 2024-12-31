@@ -1,0 +1,96 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_REGION = 'us-west-2'  
+        ECR_REPO = 'ecr-repository-name' 
+        IMAGE_NAME = 'mern-app' 
+        FRONTEND_PATH = 'Frontend'
+        BACKEND_PATH = 'Backend'
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                script {
+                    git branch: 'main', url: 'https://github.com/Jibrand/3-Tier-Application-CI-CD-with-Docker-Jenkins'
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    dir(BACKEND_PATH) {
+                        sh 'docker build -t $IMAGE_NAME-backend .'
+                    }
+
+                    dir(FRONTEND_PATH) {
+                        sh 'docker build -t $IMAGE_NAME-frontend .'
+                    }
+                }
+            }
+        }
+
+        stage('Login to Amazon ECR') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: 'aws-credentials-id', passwordVariable: 'AWS_SECRET_ACCESS_KEY', usernameVariable: 'AWS_ACCESS_KEY_ID')]) {
+                        sh '''
+                            aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPO
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Tag and Push Docker Images to ECR') {
+            steps {
+                script {
+                    sh '''
+                        docker tag $IMAGE_NAME-backend:latest $ECR_REPO/$IMAGE_NAME-backend:latest
+                        docker push $ECR_REPO/$IMAGE_NAME-backend:latest
+                    '''
+
+                    sh '''
+                        docker tag $IMAGE_NAME-frontend:latest $ECR_REPO/$IMAGE_NAME-frontend:latest
+                        docker push $ECR_REPO/$IMAGE_NAME-frontend:latest
+                    '''
+                }
+            }
+        }
+
+        stage('Pull and Deploy New Container') {
+            steps {
+                script {
+                    sh '''
+                        docker ps -q --filter "name=$IMAGE_NAME-backend" | xargs -r docker stop | xargs -r docker rm
+                        docker ps -q --filter "name=$IMAGE_NAME-frontend" | xargs -r docker stop | xargs -r docker rm
+                    '''
+
+                    sh '''
+                        docker pull $ECR_REPO/$IMAGE_NAME-backend:latest
+                        docker run -d --name $IMAGE_NAME-backend -p 5000:5000 $ECR_REPO/$IMAGE_NAME-backend:latest
+                    '''
+
+                    sh '''
+                        docker pull $ECR_REPO/$IMAGE_NAME-frontend:latest
+                        docker run -d --name $IMAGE_NAME-frontend -p 3000:3000 $ECR_REPO/$IMAGE_NAME-frontend:latest
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            cleanWs()  
+        }
+        success {
+            echo "Pipeline executed successfully!"
+        }
+        failure {
+            echo "Pipeline execution failed!"
+        }
+    }
+}
